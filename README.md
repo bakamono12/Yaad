@@ -6,6 +6,8 @@ A talking reminder app for Mom. At the set time it beeps, then **speaks the remi
 
 If she doesn't tap anything, it repeats every 3 minutes (5 times). "10 मिनट बाद" snoozes.
 
+**Voice:** a natural-sounding neural Hindi voice ([Piper](https://github.com/rhasspy/piper) "priyamvada", run by [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)) is bundled inside the app and runs fully offline. The phone's built-in voice is only used as a fallback if it can't start. Times are spoken naturally ("साढ़े आठ", "पौने नौ", "ढाई").
+
 ## Get the APK
 
 **Option A — GitHub (no setup):**
@@ -13,14 +15,14 @@ If she doesn't tap anything, it repeats every 3 minutes (5 times). "10 मिन
 2. Go to **Actions → Build APK** (runs on push, ~5 min).
 3. Download the `yaad-apk` artifact, unzip, send `app-release.apk` to Mom's phone and install (allow "install unknown apps").
 
-**Option B — Android Studio:** open the folder, let it sync, press Run.
+**Option B — Android Studio:** run `bash scripts/fetch-voice.sh` once (downloads the ~80 MB voice and native libs, which aren't committed), then open the folder and press Run.
 
 The repo includes a fixed signing key (`keystore/yaad.jks`), so every new build installs as an update and her reminders are kept. Keep the repo private.
 
 ## One-time setup on Mom's phone
 
 1. Open the app. A yellow card lists anything that needs switching on — tap **चालू करें** on each until the card disappears.
-2. If it asks for **हिंदी आवाज़**, download the Hindi voice (Google Speech Services).
+2. Open the app once after installing — the first launch unpacks the voice (a few seconds).
 3. **Xiaomi / Redmi / Realme / Oppo / Vivo / OnePlus:** these kill background apps. In phone Settings → Apps → याद दिलाओ:
    - turn on **Autostart**
    - set Battery to **No restrictions**
@@ -38,7 +40,8 @@ The repo includes a fixed signing key (`keystore/yaad.jks`), so every new build 
 |---|---|
 | Exact alarms via `AlarmManager.setAlarmClock` (survives Doze) | `Scheduler.kt` |
 | Fires → reschedules next day → starts announcer | `Receivers.kt` |
-| Foreground service: max alarm volume, beep, Hindi TTS on `USAGE_ALARM`, repeat rounds | `AnnounceService.kt` |
+| Foreground service: max alarm volume, beep, speak on `USAGE_ALARM`, repeat rounds | `AnnounceService.kt` |
+| Offline neural Hindi voice (sherpa-onnx + Piper) → `AudioTrack` | `HindiVoice.kt` |
 | Full-screen lock-screen UI | `AnnounceActivity.kt` |
 | Reboot / time-change rescheduling | `BootReceiver` in `Receivers.kt` |
 | Permission checklist | `Setup.kt` |

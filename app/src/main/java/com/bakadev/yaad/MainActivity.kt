@@ -34,12 +34,14 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         reload()
         callName = Speech.callName(this)
         Scheduler.rescheduleAll(this)
+        HindiVoice.warmUp(this) // first run unpacks the voice; later runs just load it
         tts = TextToSpeech(this, this)
 
         setContent {
             YaadTheme {
                 val tick = refresh
-                val ok = hindiOk
+                // The bundled voice covers Hindi; only warn if neither voice works.
+                val ok = if (HindiVoice.available(this@MainActivity)) true else hindiOk
                 val setup = remember(tick, ok) { Setup.items(this@MainActivity, ok) }
                 HomeScreen(
                     reminders = reminders,
@@ -94,7 +96,17 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun preview(text: String) {
-        tts?.speak(Speech.message(this, text), TextToSpeech.QUEUE_FLUSH, null, "preview")
+        val msg = Speech.message(this, text)
+        tts?.stop()
+        if (HindiVoice.available(this)) {
+            HindiVoice.speak(this, msg, alarm = false) { ok -> if (!ok) systemPreview(msg) }
+        } else {
+            systemPreview(msg)
+        }
+    }
+
+    private fun systemPreview(msg: String) {
+        tts?.speak(msg, TextToSpeech.QUEUE_FLUSH, null, "preview")
     }
 
     fun requestNotifications() {
@@ -115,6 +127,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     override fun onDestroy() {
+        if (AnnounceService.active.value == null) HindiVoice.stop()
         tts?.shutdown()
         tts = null
         super.onDestroy()

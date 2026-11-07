@@ -12,8 +12,12 @@ android {
         applicationId = "com.bakadev.yaad"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
+        // The offline voice ships native libraries for real phones only.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     // One fixed key for every build, so updating the app never wipes Mom's reminders.
@@ -46,6 +50,10 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    androidResources {
+        // The model is loaded straight from the APK; don't waste time compressing it.
+        noCompress += listOf("onnx")
     }
     lint {
         checkReleaseBuilds = false

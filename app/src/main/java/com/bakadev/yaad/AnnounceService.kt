@@ -67,8 +67,10 @@ class AnnounceService : Service(), TextToSpeech.OnInitListener {
     }
 
     private val handler = Handler(Looper.getMainLooper())
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
+    /** Phone's built-in voice — only used if the bundled Hindi voice can't run. */
+    private var sysTts: TextToSpeech? = null
+    private var sysReady = false
+    private var sysPending: String? = null
     private var tone: ToneGenerator? = null
     private var wake: PowerManager.WakeLock? = null
     private var savedVolume = -1
@@ -123,31 +125,9 @@ class AnnounceService : Service(), TextToSpeech.OnInitListener {
         boostVolume()
         handler.postDelayed({ finishAll() }, GIVE_UP_MS)
 
-        when {
-            tts == null -> {
-                tts = TextToSpeech(this, this)
-                // Safety net if the speech engine never answers: still beep.
-                handler.postDelayed({ if (rounds == 0) runRound() }, 6_000)
-            }
-            ttsReady -> runRound()
-            // else: onInit is still pending and will start the first round
-        }
+        HindiVoice.warmUp(this) // loads the voice while the beep plays
+        runRound()
         return START_NOT_STICKY
-    }
-
-    override fun onInit(status: Int) {
-        val t = tts
-        if (status == TextToSpeech.SUCCESS && t != null) {
-            t.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM) // plays even on silent/vibrate
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-            ttsReady = t.setLanguage(Speech.HINDI) >= TextToSpeech.LANG_AVAILABLE
-            t.setSpeechRate(0.85f) // a little slower = clearer
-        }
-        if (rounds == 0 && active.value != null) runRound()
     }
 
     private fun runRound() {
@@ -163,15 +143,51 @@ class AnnounceService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
+    /** Says the reminder twice, in the bundled Hindi voice if possible. */
     private fun speak(r: Reminder) {
-        val t = tts
-        if (!ttsReady || t == null) {
-            beep(); return
-        }
         val msg = Speech.message(this, r.text)
-        t.speak(msg, TextToSpeech.QUEUE_FLUSH, null, "m1")
-        t.playSilentUtterance(1_500, TextToSpeech.QUEUE_ADD, "gap")
-        t.speak(msg, TextToSpeech.QUEUE_ADD, null, "m2")
+        if (HindiVoice.available(this)) {
+            HindiVoice.speak(this, msg, alarm = true, times = 2) { ok ->
+                if (!ok && active.value != null) systemSpeak(msg)
+            }
+        } else {
+            systemSpeak(msg)
+        }
+    }
+
+    private fun systemSpeak(msg: String) {
+        val t = sysTts
+        when {
+            t == null -> {
+                sysPending = msg
+                sysTts = TextToSpeech(this, this)
+            }
+            !sysReady -> sysPending = msg
+            else -> {
+                t.speak(msg, TextToSpeech.QUEUE_FLUSH, null, "m1")
+                t.playSilentUtterance(1_500, TextToSpeech.QUEUE_ADD, "gap")
+                t.speak(msg, TextToSpeech.QUEUE_ADD, null, "m2")
+            }
+        }
+    }
+
+    override fun onInit(status: Int) {
+        val t = sysTts
+        if (status == TextToSpeech.SUCCESS && t != null) {
+            t.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM) // plays even on silent/vibrate
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            sysReady = t.setLanguage(Speech.HINDI) >= TextToSpeech.LANG_AVAILABLE
+            t.setSpeechRate(0.85f)
+        }
+        val pending = sysPending
+        sysPending = null
+        if (pending != null && active.value != null) {
+            if (sysReady) systemSpeak(pending) else beep()
+        }
     }
 
     private fun beep() {
@@ -280,7 +296,9 @@ class AnnounceService : Service(), TextToSpeech.OnInitListener {
 
     private fun finishAll() {
         handler.removeCallbacksAndMessages(null)
-        tts?.stop()
+        HindiVoice.stop()
+        sysTts?.stop()
+        sysPending = null
         restoreVolume()
         releaseWake()
         active.value = null
@@ -291,8 +309,9 @@ class AnnounceService : Service(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
-        tts?.shutdown()
-        tts = null
+        HindiVoice.stop()
+        sysTts?.shutdown()
+        sysTts = null
         tone?.release()
         tone = null
         restoreVolume()

@@ -20,6 +20,9 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Fetch offline Hindi voice
+        run: bash scripts/fetch-voice.sh
+
       - name: Build APK
         run: gradle assembleRelease --no-daemon --stacktrace
 
